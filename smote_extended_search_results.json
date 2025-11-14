@@ -1,0 +1,13 @@
+{
+  "best_params": {
+    "clf__class_weight": "balanced",
+    "clf__max_depth": 12,
+    "clf__max_features": null,
+    "clf__min_samples_leaf": 4,
+    "clf__n_estimators": 140,
+    "smote__k_neighbors": 3,
+    "smote__sampling_strategy": 1.0
+  },
+  "best_score": 0.5057608971236455,
+  "n_iter": 60
+}
