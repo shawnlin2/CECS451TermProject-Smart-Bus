@@ -25,7 +25,7 @@ def load_and_filter(csv_path: str = 'public_transport_delays.csv'):
     exclude_columns = [
         'trip_id', 'date', 'route_id', 'origin_station', 'destination_station',
         'scheduled_departure', 'scheduled_arrival', 'actual_departure_delay_min',
-        'actual_arrival_delay_min', 'event_type', 'event_attendance_est'
+        'event_type', 'event_attendance_est'
     ]
 
     df_cleaned = df.drop(columns=exclude_columns, errors='ignore')
@@ -70,9 +70,14 @@ def run_predicter():
         sys.exit(1)
     
 
-    X = df_cleaned.drop(columns=['delayed'])
-    y = df_cleaned['delayed']
-    print(y.value_counts())
+    # Use actual arrival delay (minutes) as the target variable
+    if 'actual_arrival_delay_min' not in df_cleaned.columns:
+        raise KeyError("Required target column 'actual_arrival_delay_min' not found in data after filtering.")
+
+    # Ensure numeric target and replace missing with 0.0 (or consider dropping NaNs)
+    y = pd.to_numeric(df_cleaned['actual_arrival_delay_min'], errors='coerce').fillna(0.0)
+    X = df_cleaned.drop(columns=['actual_arrival_delay_min'])
+    print(y.describe())
 
     # Preprocess features: parse datetimes, encode categoricals, ensure numeric-only
     X_proc = X.copy()
