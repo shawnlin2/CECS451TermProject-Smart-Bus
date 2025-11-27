@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-
+import time
 from sklearn.model_selection import cross_validate, RepeatedKFold, RandomizedSearchCV, train_test_split, RepeatedStratifiedKFold
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, BaggingClassifier, BaggingRegressor
 from scipy.stats import randint
@@ -22,10 +22,9 @@ def load_and_filter(csv_path: str = 'public_transport_delays.csv'):
     except FileNotFoundError as exc:
         raise FileNotFoundError(f"Could not find '{csv_path}'. Run from project root or provide correct path.") from exc
 
+    # Keep scheduling and route info so we can engineer useful temporal and route features
     exclude_columns = [
-        'trip_id', 'date', 'route_id', 'origin_station', 'destination_station',
-        'scheduled_departure', 'scheduled_arrival', 'actual_departure_delay_min',
-        'event_type', 'event_attendance_est'
+        'trip_id', 'event_type', 'event_attendance_est'
     ]
 
     df_cleaned = df.drop(columns=exclude_columns, errors='ignore')
@@ -70,11 +69,35 @@ def run_predicter():
         sys.exit(1)
     
 
-    # Use actual arrival delay (minutes) as the target variable
+    # Feature engineering: scheduled duration, scheduled departure hour/day, departure delay, route historical avg
+    # Parse scheduled datetimes where possible
+    if 'date' in df_cleaned.columns and 'scheduled_departure' in df_cleaned.columns and 'scheduled_arrival' in df_cleaned.columns:
+        sched_dep = pd.to_datetime(df_cleaned['date'].astype(str) + ' ' + df_cleaned['scheduled_departure'].astype(str), errors='coerce', infer_datetime_format=True)
+        sched_arr = pd.to_datetime(df_cleaned['date'].astype(str) + ' ' + df_cleaned['scheduled_arrival'].astype(str), errors='coerce', infer_datetime_format=True)
+        df_cleaned['scheduled_duration_min'] = (sched_arr - sched_dep).dt.total_seconds() / 60.0
+        df_cleaned['sched_dep_hour'] = sched_dep.dt.hour
+        df_cleaned['sched_dep_dow'] = sched_dep.dt.dayofweek
+    else:
+        df_cleaned['scheduled_duration_min'] = np.nan
+        df_cleaned['sched_dep_hour'] = np.nan
+        df_cleaned['sched_dep_dow'] = np.nan
+
+    # Include observed departure delay if available (numeric)
+    if 'actual_departure_delay_min' in df_cleaned.columns:
+        df_cleaned['actual_departure_delay_min'] = pd.to_numeric(df_cleaned['actual_departure_delay_min'], errors='coerce')
+    else:
+        df_cleaned['actual_departure_delay_min'] = 0.0
+
+    # Route-level historical average delay (helps regularize per-route behavior); safe if route_id present
+    if 'route_id' in df_cleaned.columns and 'actual_arrival_delay_min' in df_cleaned.columns:
+        df_cleaned['route_avg_delay'] = df_cleaned.groupby('route_id')['actual_arrival_delay_min'].transform('mean')
+    else:
+        df_cleaned['route_avg_delay'] = np.nan
+
+    # Use actual arrival delay (minutes) as the regression target
     if 'actual_arrival_delay_min' not in df_cleaned.columns:
         raise KeyError("Required target column 'actual_arrival_delay_min' not found in data after filtering.")
 
-    # Ensure numeric target and replace missing with 0.0 (or consider dropping NaNs)
     y = pd.to_numeric(df_cleaned['actual_arrival_delay_min'], errors='coerce').fillna(0.0)
     X = df_cleaned.drop(columns=['actual_arrival_delay_min'])
     print(y.describe())
@@ -223,7 +246,7 @@ def run_predicter():
     else:
         cv = RepeatedKFold(n_splits=5, n_repeats=5, random_state=42)
 
-        pipeline = ImbPipeline(steps=[
+        pipeline = SkPipeline(steps=[
             ('preproc', preprocessor),
             ('clf', RandomForestRegressor(random_state=42, n_jobs=-1))
         ])
@@ -274,5 +297,7 @@ def run_predicter():
 
 
 if __name__ == '__main__':
+    start_time = time.time()
     run_predicter()
+    print((time.time() - start_time))
 
