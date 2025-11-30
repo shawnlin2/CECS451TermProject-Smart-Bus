@@ -23,11 +23,10 @@ try:
     else:
         model_error = "Model file not found."
 except Exception as e:
-        model_error = f"Model load error: {e}"
+    model_error = f"Model load error: {e}"
 
 
 def predict_delay_for_route(route_id):
-    """Average delay in minutes, matching '70' → '70-%'."""
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
 
@@ -49,14 +48,48 @@ def predict_delay_for_route(route_id):
     return avg_sec / 60.0
 
 
+def get_route_path(route_id):
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+    rid = str(route_id)
+    if "-" in rid:
+        cur.execute(
+            """
+            SELECT stop_id, MIN(stop_sequence) AS seq
+            FROM training_events
+            WHERE route_id = %s
+            GROUP BY stop_id
+            ORDER BY seq;
+            """,
+            (rid,),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT stop_id, MIN(stop_sequence) AS seq
+            FROM training_events
+            WHERE route_id LIKE %s
+            GROUP BY stop_id
+            ORDER BY seq;
+            """,
+            (f"{rid}-%",),
+        )
+
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return [str(r[0]) for r in rows]
+
+
 def parse_user_time(t):
-    try:
-        return datetime.strptime(t.upper(), "%I %p")
-    except:
+    for fmt in ("%I %p", "%I:%M %p"):
         try:
-            return datetime.strptime(t.upper(), "%I:%M %p")
-        except:
-            return None
+            return datetime.strptime(t.upper(), fmt)
+        except ValueError:
+            continue
+    return None
 
 
 @app.route("/")
@@ -74,7 +107,6 @@ def api_query():
     notes = []
     prediction_text = None
 
-    # Don't treat plain numbers as bus numbers unless a bus word appears
     lower = text.lower()
     has_bus_word = any(w in lower for w in ["bus", "line", "route"])
     if parsed.get("bus_number") and not has_bus_word:
@@ -84,49 +116,96 @@ def api_query():
 
     bus = parsed.get("bus_number")
     user_time_str = parsed.get("time")
+    destination = parsed.get("destination")
 
     if not bus:
         notes.append("No bus number found in query.")
-        return jsonify({"parsed": parsed, "prediction_text": "No prediction", "notes": notes})
+        return jsonify(
+            {
+                "parsed": parsed,
+                "prediction_text": "No prediction",
+                "notes": notes,
+                "display_stops": [],
+                "full_stop_count": 0,
+                "path_summary": None,
+            }
+        )
 
     delay_min = predict_delay_for_route(bus)
     if delay_min is None:
         notes.append("No historical delay data for this route.")
-        return jsonify({"parsed": parsed, "prediction_text": "No prediction", "notes": notes})
-
-    delay_abs = abs(delay_min)
-    if delay_min < 0:
-        delay_text = f"Bus is usually early by {delay_abs:.1f} minutes."
+        delay_text = None
     else:
-        delay_text = f"Estimated delay: {delay_min:.1f} minutes."
-
-    # Always plan using magnitude of delay + 5 min buffer
-    buffer_min = 5
-    effective_delay = delay_abs + buffer_min
-
-    if user_time_str:
-        target = parse_user_time(user_time_str)
-        if target:
-            today = datetime.now()
-            target = target.replace(year=today.year, month=today.month, day=today.day)
-            depart_time = target - timedelta(minutes=effective_delay)
-            depart_str = depart_time.strftime("%I:%M %p").lstrip("0")
-
-            parsed["time"] = user_time_str
-
-            prediction_text = (
-                f"{delay_text} To arrive by {user_time_str}, "
-                f"you should leave around {depart_str}."
-            )
+        delay_abs = abs(delay_min)
+        if delay_min < 0:
+            delay_text = f"Bus is usually early by {delay_abs:.1f} minutes."
         else:
-            prediction_text = delay_text
-    else:
-        eta = datetime.now() + timedelta(minutes=effective_delay)
-        eta_str = eta.strftime("%I:%M %p").lstrip("0")
-        parsed["time"] = eta_str
-        prediction_text = f"{delay_text} Expected arrival around {eta_str}."
+            delay_text = f"Estimated delay: {delay_min:.1f} minutes."
 
-    return jsonify({"parsed": parsed, "prediction_text": prediction_text, "notes": notes})
+    buffer_min = 5
+    effective_delay = (abs(delay_min) if delay_min is not None else 0.0) + buffer_min
+
+    if delay_text:
+        if user_time_str:
+            target = parse_user_time(user_time_str)
+            if target:
+                today = datetime.now()
+                target = target.replace(year=today.year, month=today.month, day=today.day)
+                depart_time = target - timedelta(minutes=effective_delay)
+                depart_str = depart_time.strftime("%I:%M %p").lstrip("0")
+
+                parsed["time"] = user_time_str
+                prediction_text = (
+                    f"{delay_text} To arrive by {user_time_str}, "
+                    f"you should leave around {depart_str}."
+                )
+            else:
+                prediction_text = delay_text
+        else:
+            eta = datetime.now() + timedelta(minutes=effective_delay)
+            eta_str = eta.strftime("%I:%M %p").lstrip("0")
+            parsed["time"] = eta_str
+            prediction_text = f"{delay_text} Expected arrival around {eta_str}."
+    else:
+        prediction_text = "No prediction"
+
+    display_stops = []
+    full_count = 0
+    path_summary = None
+
+    try:
+        all_stops = get_route_path(bus)
+        full_count = len(all_stops)
+        if full_count > 0:
+            if full_count <= 10:
+                display_stops = all_stops
+            else:
+                display_stops = all_stops[:5] + all_stops[-5:]
+
+            if destination:
+                path_summary = (
+                    f"Path toward {destination} on route {bus} — "
+                    f"showing {len(display_stops)} of {full_count} stops."
+                )
+            else:
+                path_summary = (
+                    f"Showing {len(display_stops)} of {full_count} stops on route {bus}."
+                )
+        else:
+            notes.append("No path data for this route.")
+    except Exception as e:
+        notes.append(f"Path error: {e}")
+
+    return jsonify(
+        {
+            "parsed": parsed,
+            "prediction_text": prediction_text,
+            "notes": notes,
+            "display_stops": display_stops,
+            "full_stop_count": full_count,
+            "path_summary": path_summary,
+        }
+    )
 
 
 if __name__ == "__main__":

@@ -3,9 +3,9 @@ imblearn
 python-dotenv >= 1.0
 gtfs-realtime-bindings
 pandas
+numpy
 flask
 joblib
-numpy
 scikit-learn
 requests
 pytz

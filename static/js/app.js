@@ -12,6 +12,11 @@ go.onclick = async () => {
   });
 
   const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || "Request failed");
+    return;
+  }
+
   const p = data.parsed || {};
 
   document.getElementById("bus").textContent = p.bus_number || "—";
@@ -22,10 +27,28 @@ go.onclick = async () => {
   const notesList = document.getElementById("notes");
   notesList.innerHTML = "";
   (data.notes || []).forEach(n => {
-    let li = document.createElement("li");
+    const li = document.createElement("li");
     li.textContent = n;
     notesList.appendChild(li);
   });
+
+  const pathSummaryEl = document.getElementById("path-summary");
+  const pathList = document.getElementById("path-list");
+  pathList.innerHTML = "";
+
+  const stops = data.display_stops || [];
+  const fullCount = data.full_stop_count || 0;
+
+  if (stops.length > 0) {
+    pathSummaryEl.textContent = data.path_summary || `Showing ${stops.length} of ${fullCount} stops.`;
+    stops.forEach((stopId, idx) => {
+      const li = document.createElement("li");
+      li.textContent = `Stop ${idx + 1}: ${stopId}`;
+      pathList.appendChild(li);
+    });
+  } else {
+    pathSummaryEl.textContent = "No path information available for this route.";
+  }
 
   document.getElementById("results").style.display = "block";
 };
