@@ -1,8 +1,11 @@
 spacy >= 3.0
-genai >= 2.0
-python >= 3.11
 imblearn
-python-dot_env >= 1.0
-google.transit
+python-dotenv >= 1.0
+gtfs-realtime-bindings
 pandas
-
+flask
+joblib
+numpy
+scikit-learn
+requests
+pytz

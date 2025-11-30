@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Bus Delay Assistant</title>
+  <style>
+    body { font-family: Arial; background:#111; color:#eee; padding:20px; }
+    textarea, button { width:100%; padding:10px; margin-top:10px; border-radius:8px; }
+    textarea { background:#222; color:#eee; border:1px solid #444; }
+    button { background:#4ea4f7; border:none; color:#000; cursor:pointer; }
+    .card { background:#1b1b1b; padding:20px; border-radius:12px; max-width:700px; margin:auto; }
+    .results { margin-top:20px; padding-top:10px; border-top:1px solid #444; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Bus Delay Assistant</h2>
+
+    {% if model_loaded %}
+      <p style="color:#4ade80;">Model loaded</p>
+    {% else %}
+      <p style="color:#f87171;">Model not loaded: {{ model_error }}</p>
+    {% endif %}
+
+    <textarea id="input" placeholder="Ask about a bus—for example: Is bus 33 delayed?"></textarea>
+    <button id="go">Submit</button>
+
+    <div id="results" class="results" style="display:none;">
+      <p><b>Bus Number:</b> <span id="bus"></span></p>
+      <p><b>Destination:</b> <span id="dest"></span></p>
+      <p><b>Time:</b> <span id="time"></span></p>
+      <p><b>Prediction:</b> <span id="prediction"></span></p>
+      <p><b>Notes:</b></p>
+      <ul id="notes"></ul>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
