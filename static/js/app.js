@@ -65,3 +65,42 @@ function haversine(coord1, coord2) {
   const a = Math.sin(dLat / 2)**2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2)**2;
   return 2 * r * Math.asin(Math.sqrt(a));
 }
+
+// A* Algorithm 
+function aStar(start, end, graph, coords) {
+  const openSet = new MinHeap();
+  openSet.push({ node: start, f:0});
+
+  const cameFrom = {};
+  const gScore = {}; 
+  Object.keys(graph).forEach(n => gScore[n] = Infinity);
+  gscore[start] = 0; 
+
+  while (!openSet.isEmpty()) {
+    const current = openSet.pop().node;
+    if (current === end) {
+      // reconstruct path 
+      const path = [];
+      let temp = end;
+      while (temp) {
+        path.push(temp);
+        temp = cameFrom[temp];
+      }
+      path.reverse();
+      return;
+    }
+
+    for (let neighbor in graph[current]) {
+      const tentative_g = gScore[current] + graph[current][neighbor];
+      if (tentative_g < gscore[neighbor]) {
+        cameFrom[neighbor] = current;
+        gScore[neighbor] = tentative_g;
+        const f = tentative_g + haversine(coords[neighbor], coords[end]);
+        openSet.push({ node: neighbor, f: f });
+
+      }
+    }
+  }
+
+  return []; // no path found
+}
