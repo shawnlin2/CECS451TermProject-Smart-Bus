@@ -134,3 +134,22 @@ function buildSuggestedPathAStar(stopsFromBackend) {
     path: path
   };
 }
+
+// Replace old path display call
+async function enhancePathDisplay(data) {
+  const pathSummaryEl = document.getElementById("path-summary");
+  const pathList = document.getElementById("path-list");
+  pathList.innerHTML = "";
+
+  const stops = data.display_stops || [];
+
+  const result = buildSuggestedPathAStar(stops);
+
+  pathSummaryEl.textContent = result.summary;
+
+  result.path.forEach((stopId, idx) => {
+    const li = document.createElement("li");
+    li.textContent = `Stop ${idx + 1}: ${stopId}`;
+    pathList.appendChild(li);
+  });
+}
