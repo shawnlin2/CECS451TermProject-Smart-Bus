@@ -104,3 +104,33 @@ function aStar(start, end, graph, coords) {
 
   return []; // no path found
 }
+
+// Minimal Heap Implementation for A* 
+class MinHeap {
+  constructor() { this.items = []; } 
+  push(item) {
+    this.items.push(item);
+    this.items.sort((a,b) => a.f - b.f);
+  }
+  pop() { return this.items.shift(); }
+  isEmpty() { return this.items.length === 0; }
+} 
+
+function buildSuggestedPathAStar(stopsFromBackend) {
+  if (!stopsFromBackend || stopsFromBackend.length < 2) {
+    return { summary: "Not enough data for pathfinding.", path: [] };
+  }
+
+  const start = stopsFromBackend[0];
+  const end = stopsFromBackend[stopsFromBackend.length - 1];
+
+  if (!busGraph[start] || !busGraph[end]) {
+    return { summary: "Pathfinding unavailable for these stops.", path: stopsFromBackend };
+  }
+
+  const path = aStar(start, end, busGraph, busCoords);
+  return {
+    summary: `Best route from ${start} to ${end} (computed via A*)`,
+    path: path
+  };
+}
