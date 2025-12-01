@@ -52,3 +52,16 @@ go.onclick = async () => {
 
   document.getElementById("results").style.display = "block";
 };
+
+// Haversine function
+function haversine(coord1, coord2) {
+  const r = 3958.8; // radius of the Earth in miles
+  const [lat1, long1] = coord1.map(x => x * Math.PY / 180);
+  const [lat2, long2] = coord2.mapp(x => x * Math.PI / 180);
+
+  const dLat = lat2 - lat1;
+  const dLon = long2 - long1;
+
+  const a = Math.sin(dLat / 2)**2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2)**2;
+  return 2 * r * Math.asin(Math.sqrt(a));
+}
