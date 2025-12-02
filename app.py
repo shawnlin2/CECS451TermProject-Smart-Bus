@@ -229,6 +229,21 @@ def load_bus_graph():
     conn.close()
     return graph
 
+def load_bus_coords():
+    conn = psycopg2.connect(DATABASE_URL)
+    current = conn.cursor()
+    
+    current.execute( """
+            SELECT stop_id, lat, lon
+            FROM bus_stops;
+    """)
+
+    coords = {str(s): (float(lat), float(lon)) 
+            for s, lat, lon in current.fetchall()}
+
+    current.close()
+    conn.close()
+    return coords
 
 if __name__ == "__main__":
     app.run(debug=True)
