@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import psycopg2
 from joblib import load
 from inputParse import parse_user_query
+import heapq
+import math
 
 load_dotenv()
 
@@ -206,6 +208,26 @@ def api_query():
             "path_summary": path_summary,
         }
     )
+
+def load_bus_graph():
+    """Connects to the database."""
+    conn = psycopg2.connect(DATABASE_URL)
+    current = conn.cursor()
+
+    current.execute( """
+            SELECT stop_id, next_stop_id, distance
+            FROM bus_edges;
+    """)
+
+    graph = {}
+    for stop, nxt, dist, in current.fetchall():
+        stop = str(stop)
+        nxt = str(nxt)
+        graph.setdefault(stop, {})[nxt] = float(dist)
+
+    current.close()
+    conn.close()
+    return graph
 
 
 if __name__ == "__main__":
