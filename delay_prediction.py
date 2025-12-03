@@ -210,101 +210,23 @@ def run_predicter():
     train_x, valid_x, train_y, valid_y = train_test_split(X_temp, y_temp, test_size=0.25, random_state=42, stratify=stratify2)
 
     # Build preprocessing + SMOTE + classifier pipeline for classification
-    if is_classification_target(y):
-        # Use a RepeatedStratifiedKFold for stable CV estimates
-        cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=42)
+    cv = RepeatedKFold(n_splits=5, n_repeats=5, random_state=42)
 
-        # Pipeline keeps SMOTE in-place (we will tune SMOTE + classifier together)
-        pipeline = ImbPipeline(steps=[
-            ('preproc', preprocessor),
-            ('smote', SMOTE(random_state=42)),
-            ('clf', RandomForestClassifier(random_state=42, n_jobs=-1))
-        ])
+    pipeline = SkPipeline(steps=[
+        ('preproc', preprocessor),
+        ('clf', RandomForestRegressor(random_state=42, n_jobs=-1))
+    ])
 
-        # Focus on macro F1 for overall class balance while allowing
-        # later custom searches for minority recall if needed.
-        scoring = {'f1_macro': 'f1_macro', 'accuracy': 'accuracy'}
-        refit_metric = 'f1_macro'
+    scoring = 'neg_mean_absolute_error'
+    refit_metric = True
 
-        # Expanded hyperparameter space including SMOTE sampling strategy
-        # and k_neighbors so we can better explore resampling behavior.
-        param_dist = {
-            'smote__sampling_strategy': [0.5, 0.75, 1.0, 'auto'],
-            'smote__k_neighbors': [1, 3, 5, 7],
-            'clf__n_estimators': [100, 140, 200, 300],
-            'clf__min_samples_leaf': randint(1, 6),
-            'clf__max_depth': [None, 5, 8, 12],
-            'clf__max_features': ['sqrt', 'log2', 0.5, None],
-            'clf__class_weight': [None, 'balanced']
-        }
+    param_dist = {
+        'clf__n_estimators': [100, 200, 300],
+        'clf__max_depth': [5, 8, 12, None],
+        'clf__min_samples_leaf': randint(5, 10),
+        'clf__max_features': ['sqrt', 'log2', 0.5, None]
+    }
 
-        # Use a larger randomized search to better explore SMOTE+RF interactions
-        # (n_iter chosen to balance exploration and runtime). Results will be
-        # saved to `smote_extended_search_results.json` for later inspection.
-        try:
-            n_iter_search = 60
-            rs = RandomizedSearchCV(pipeline, param_dist,
-                                    n_iter=n_iter_search, cv=cv,
-                                    scoring=scoring, refit=refit_metric,
-                                    n_jobs=-1, random_state=42, verbose=2)
-            extended_rs_success = False
-            try:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message="Found unknown categories.*", category=UserWarning)
-                    rs.fit(train_x, train_y)
-                extended_rs_success = True
-                print("Best params from extended SMOTE RandomizedSearchCV:", rs.best_params_)
-                best_pipeline = rs.best_estimator_
-            except Exception as e:
-                print("Extended RandomizedSearchCV failed:", e)
-                extended_rs_success = False
-                raise
-
-            # Save summarized search output (best params, best score, top candidates)
-            out = {
-                'best_params': rs.best_params_,
-                'best_score': float(rs.best_score_),
-                'n_iter': n_iter_search
-            }
-            try:
-                # attempt to store the top 10 candidates by mean test score
-                cvres = rs.cv_results_
-                order = np.argsort(cvres['mean_test_score'])[::-1][:10]
-                top = []
-                for i in order:
-                    top.append({'mean_test_score': float(cvres['mean_test_score'][i]), 'params': cvres['params'][i]})
-                out['top_candidates'] = top
-            except Exception:
-                pass
-
-            with open('smote_extended_search_results.json', 'w') as fh:
-                json.dump(out, fh, indent=2)
-        except Exception as e:
-            print("Extended RandomizedSearchCV failed or skipped:", e)
-            # Fallback: fit a default SMOTE pipeline on training data
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message="Found unknown categories.*", category=UserWarning)
-                pipeline.fit(train_x, train_y)
-            best_pipeline = pipeline
-    else:
-        cv = RepeatedKFold(n_splits=5, n_repeats=5, random_state=42)
-
-        pipeline = SkPipeline(steps=[
-            ('preproc', preprocessor),
-            ('clf', RandomForestRegressor(random_state=42, n_jobs=-1))
-        ])
-
-        scoring = 'neg_mean_absolute_error'
-        refit_metric = True
-
-        param_dist = {
-            'clf__n_estimators': [100, 200, 300],
-            'clf__max_depth': [5, 8, 12, None],
-            'clf__min_samples_leaf': randint(5, 10),
-            'clf__max_features': ['sqrt', 'log2', 0.5, None]
-        }
-
-    # Optionally run randomized search on the training set to find better params
     try:
         rs = RandomizedSearchCV(pipeline, param_dist,
                                 n_iter=20, cv=cv,
@@ -338,16 +260,11 @@ def run_predicter():
             warnings.filterwarnings("ignore", message="Found unknown categories.*", category=UserWarning)
             val_preds = best_pipeline.predict(valid_x)
 
-        if is_classification_target(y):
-            val_acc = accuracy_score(valid_y, val_preds)
-            val_f1 = f1_score(valid_y, val_preds, average='macro')
-            print(f"Validation Accuracy: {val_acc:.4f}")
-            print(f"Validation F1 (macro): {val_f1:.4f}")
-        else:
-            val_mae = mean_absolute_error(valid_y, val_preds)
-            val_r2 = r2_score(valid_y, val_preds)
-            print(f"Validation MAE: {val_mae:.4f} Seconds")
-            print(f"Validation R^2: {val_r2:.4f}")
+        
+        val_mae = mean_absolute_error(valid_y, val_preds)
+        val_r2 = r2_score(valid_y, val_preds)
+        print(f"Validation MAE: {val_mae:.4f} Seconds")
+        print(f"Validation R^2: {val_r2:.4f}")
 
         # Refit the chosen pipeline on train + valid for final evaluation on test
         combined_x = pd.concat([train_x, valid_x], ignore_index=True)
@@ -366,18 +283,11 @@ def run_predicter():
 
 
 
-    if is_classification_target(y):
-        acc = accuracy_score(test_y, preds)
-        f1 = f1_score(test_y, preds, average='macro')
-        print(f"Test Accuracy: {acc:.4f}")
-        print(f"Test F1 (macro): {f1:.4f}")
-        print("Classification report:\n", classification_report(test_y, preds))
-        print("Confusion matrix:\n", confusion_matrix(test_y, preds))
-    else:
-        mae = mean_absolute_error(test_y, preds)
-        r2 = r2_score(test_y, preds)
-        print(f"Test MAE: {mae:.4f} seconds")
-        print(f"Test R^2: {r2:.4f}")
+
+    mae = mean_absolute_error(test_y, preds)
+    r2 = r2_score(test_y, preds)
+    print(f"Test MAE: {mae:.4f} seconds")
+    print(f"Test R^2: {r2:.4f}")
 
     # Save an inference pipeline (preprocessor + estimator) for later use.
     try:
