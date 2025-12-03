@@ -245,5 +245,43 @@ def load_bus_coords():
     conn.close()
     return coords
 
+def haversine(c1, c2):
+    r = 3958.8
+    lat1, lon1 = map(math.radians, c1)
+    lat2, lon2 = map(math.radians, c2)
+
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = (
+        math.sin(dlat / 2) ** 2 + 
+        math.cos(lat1) * math.cos(lat2) * 
+        math.sin(dlon / 2) ** 2
+    )
+    return 2 * r * math.asin(math.sqrt(a))
+
+def a_star(start, end, graph, coords): 
+    pq = [(0, start)]
+    came = {}
+    g = {n: float("inf") for n in graph}
+    g[start] = 0
+
+    while pq:
+        _, current = heapq.heappop(pq)
+        if current == end:
+            path = [end]
+            while path[-1] in came:
+                path.append(came[path[-1]])
+            return list(reversed(path))
+        
+        for nxt, dist in graph[current].items():
+            new_g = g[current] + dist
+            if new_g < g[current]:
+                came[nxt] = current
+                g[nxt] = new_g
+                f = new_g + haversine(coords[nxt], coords[end])
+                heapq.heappush(pq, (f, nxt))
+    return []
+
 if __name__ == "__main__":
     app.run(debug=True)
