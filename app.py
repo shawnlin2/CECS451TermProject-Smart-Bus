@@ -283,5 +283,33 @@ def a_star(start, end, graph, coords):
                 heapq.heappush(pq, (f, nxt))
     return []
 
+@app.route("/api/path", methods=["POST"])
+def api_path():
+    data = request.json or {}
+    stops = data.get("stops", [])
+    if not stops or len(stops) < 2:
+        return jsonify({"error": "Need at least start and end stop"}), 400
+    
+    start, end = stops[0], stops[-1]
+
+    try: 
+        graph = load_bus_graph()
+        coords = load_bus_coords()
+
+        if start not in graph or end not in coords:
+            return jsonify({"error": "Stops not found in database"}), 400
+        
+        path = a_star(start, end, graph, coords)
+
+        return jsonify({
+            "start": start,
+            "end": end, 
+            "path": path,
+            "count": len(path)
+        })
+    except Exception as e: 
+        return jsonify({"error": f"A* failed: {e}"}), 500
+    
+
 if __name__ == "__main__":
     app.run(debug=True)
