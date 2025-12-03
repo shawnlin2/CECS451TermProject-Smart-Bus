@@ -76,10 +76,9 @@ def load_and_filter(csv_path: str = 'data/training_events.csv', db_uri: str = No
     # Drop non-informative identifier / snapshot columns when present
     df = df.drop(columns=['id', 'snapshot_utc'], errors='ignore')
 
-    # Return a deterministic sample of up to 1000 rows for quicker iteration.
-    # If the dataset is smaller than 1000 rows, return it all.
-    if df.shape[0] >= 3000:
-        return df.sample(n=3000, random_state=42).reset_index(drop=True)
+    # Return a deterministic sample of up to 5000 rows for quicker iteration.
+    if df.shape[0] >= 5000:
+        return df.sample(n=5000, random_state=42).reset_index(drop=True)
     return df.reset_index(drop=True)
 
 
@@ -142,11 +141,8 @@ def run_predicter():
     for col in list(X_proc.columns):
         if X_proc[col].dtype == object or pd.api.types.is_string_dtype(X_proc[col]):
             parsed = pd.to_datetime(X_proc[col], errors='coerce', infer_datetime_format=True)
-            # If parsing yields some dates, extract components and drop original
+            # If parsing yields some dates, extract time-of-day and weekday only (avoid calendar/date fields)
             if parsed.notna().any():
-                X_proc[col + '_year'] = parsed.dt.year
-                X_proc[col + '_month'] = parsed.dt.month
-                X_proc[col + '_day'] = parsed.dt.day
                 X_proc[col + '_dow'] = parsed.dt.dayofweek
                 X_proc[col + '_hour'] = parsed.dt.hour
                 X_proc.drop(columns=[col], inplace=True)
@@ -350,7 +346,7 @@ def run_predicter():
         else:
             val_mae = mean_absolute_error(valid_y, val_preds)
             val_r2 = r2_score(valid_y, val_preds)
-            print(f"Validation MAE: {val_mae:.4f}")
+            print(f"Validation MAE: {val_mae:.4f} Seconds")
             print(f"Validation R^2: {val_r2:.4f}")
 
         # Refit the chosen pipeline on train + valid for final evaluation on test
@@ -380,7 +376,7 @@ def run_predicter():
     else:
         mae = mean_absolute_error(test_y, preds)
         r2 = r2_score(test_y, preds)
-        print(f"Test MAE: {mae:.4f}")
+        print(f"Test MAE: {mae:.4f} seconds")
         print(f"Test R^2: {r2:.4f}")
 
     # Save an inference pipeline (preprocessor + estimator) for later use.
