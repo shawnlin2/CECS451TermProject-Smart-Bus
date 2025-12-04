@@ -3,12 +3,16 @@ let busGraph = {};
 let busCoords = {};
 
 async function loadBusNetwork() {
-  const res = await fetch("/api/bus_network");
-  const data = await res.json();
-  busGraph = data.graph || {};
-  busCoords = data.coords || {};
+  try {
+    const res = await fetch("/api/bus_network");
+    if (!res.ok) return; // silently ignore if endpoint missing
+    const data = await res.json();
+    busGraph = data.graph || {};
+    busCoords = data.coords || {};
+  } catch (e) {
+    // No network map available — fallback only
+  }
 }
-loadBusNetwork();
 
 const go = document.getElementById("go");
 const input = document.getElementById("input");
@@ -70,8 +74,10 @@ go.onclick = async () => {
 // Haversine function
 function haversine(coord1, coord2) {
   const r = 3958.8; // radius of the Earth in miles
-  const [lat1, long1] = coord1.map(x => x * Math.PI / 180);
-  const [lat2, long2] = coord2.map(x => x * Math.PI / 180);
+  const lat1 = coord1.lat * Math.PI / 180;
+  const long1 = coord1.lon * Math.PI / 180;
+  const lat2 = coord2.lat * Math.PI / 180;
+  const long2 = coord2.lon * Math.PI / 180;
 
   const dLat = lat2 - lat1;
   const dLon = long2 - long1;
@@ -96,20 +102,18 @@ class MinHeap {
 
 // A* Algorithm 
 function aStar(start, end, graph, coords) {
-  if (!graph[start || !graph[end]]) return[];
+  if (!graph[start] || !graph[end]) return []; 
 
-  const openSet = new MinHeap();
-  openSet.push({ node: start, f: 0});
+  const open = new MinHeap();
+  open.push({ node: start, f: 0 });
 
   const cameFrom = {};
-  const gScore = {}; 
-  Object.keys(graph).forEach(n => gScore[n] = Infinity);
-  gScore[start] = 0; 
+  const g = Object.fromEntries(Object.keys(graph).map(k => [k, Infinity]));
+  g[start] = 0;
 
-  while (!openSet.isEmpty()) {
-    const current = openSet.pop().node;
+  while (!open.isEmpty()) {
+    const current = open.pop().node;
     if (current === end) {
-      // reconstruct path 
       const path = [];
       let temp = end;
       while (temp) {
@@ -120,58 +124,73 @@ function aStar(start, end, graph, coords) {
     }
 
     for (let neighbor in graph[current]) {
-      const tentative_g = gScore[current] + graph[current][neighbor];
-      if (tentative_g < gScore[neighbor]) {
+      const tentative = g[current] + graph[current][neighbor];
+      if (tentative < g[neighbor]) {
         cameFrom[neighbor] = current;
-        gScore[neighbor] = tentative_g;
-        const f = tentative_g + haversine(coords[neighbor], coords[end]);
-        openSet.push({ node: neighbor, f: f });
-
+        g[neighbor] = tentative;
+        const f = tentative + haversine(coords[neighbor], coords[end]);
+        open.push({ node: neighbor, f });
       }
     }
   }
-
-  return []; // no path found
+  return [];
 }
 
-function buildSuggestedPathAStar(stopsFromBackend) {
-  if (!stopsFromBackend || stopsFromBackend.length < 2) {
-    return { 
-      summary: "Not enough data for pathfinding.", 
-      path: [] 
-    };
+function buildSuggestedPathAStar(stops) {
+  if (!stops || stops.length < 2) {
+    return { summary: "Not enough stop data.", path: [] };
   }
 
-  const start = stopsFromBackend[0];
-  const end = stopsFromBackend[stopsFromBackend.length - 1];
+  const start = stops[0];
+  const end = stops[stops.length - 1];
 
-  if (!busGraph[start] || !busGraph[end]) {
-    return { 
-      summary: "Pathfinding unavailable for these stops.", 
-      path: stopsFromBackend 
-    };
-  }
-
+  // Try A*
   const path = aStar(start, end, busGraph, busCoords);
+  if (path.length > 1) {
+    return {
+      summary: `Best A* path from ${start} to ${end}:`,
+      path
+    };
+  }
+
   return {
-    summary: `Best route from ${start} to ${end} (computed via A*)`,
-    path: path
+    summary: `Path toward destination (backend route)`,
+    path: stops
   };
 }
 
-// Replace old path display call
 async function enhancePathDisplay(data) {
   const pathSummaryEl = document.getElementById("path-summary");
   const pathList = document.getElementById("path-list");
   pathList.innerHTML = "";
 
   const stops = data.display_stops || [];
+  const destination = data.parsed.destination;
+  const route = data.parsed.bus_number;
+  const fullCount = data.full_stop_count || stops.length;
 
-  const result = buildSuggestedPathAStar(stops);
+  if (!stops || stops.length === 0) {
+    pathSummaryEl.textContent = "No path information available for this route.";
+    return;
+  }
 
-  pathSummaryEl.textContent = result.summary;
+  // Use A* path if graph is loaded
+  let path = stops;
+  let summary = destination && route
+    ? `Path toward ${destination} on route ${route} — showing ${stops.length} of ${fullCount} stops`
+    : `Path toward destination (backend route)`;
 
-  result.path.forEach((stopId, idx) => {
+  if (Object.keys(busGraph).length > 0 && Object.keys(busCoords).length > 0) {
+    const aStarPath = aStar(stops[0], stops[stops.length - 1], busGraph, busCoords);
+    if (aStarPath && aStarPath.length > 1) {
+      path = aStarPath;
+      summary = `Best A* path from ${stops[0]} to ${stops[stops.length - 1]} — showing ${path.length} stops`;
+    }
+  }
+
+  pathSummaryEl.textContent = summary;
+
+  path.forEach((stopId, idx) => {
     const li = document.createElement("li");
     li.textContent = `Stop ${idx + 1}: ${stopId}`;
     pathList.appendChild(li);

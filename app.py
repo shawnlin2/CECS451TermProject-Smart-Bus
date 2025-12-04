@@ -108,7 +108,7 @@ def api_query():
     parsed = parse_user_query(text)
     notes = []
     prediction_text = None
-
+    
     lower = text.lower()
     has_bus_word = any(w in lower for w in ["bus", "line", "route"])
     if parsed.get("bus_number") and not has_bus_word:
@@ -238,8 +238,11 @@ def load_bus_coords():
             FROM bus_stops;
     """)
 
-    coords = {str(s): (float(lat), float(lon)) 
-            for s, lat, lon in current.fetchall()}
+    rows = current.fetchall()
+    coords = {
+        str(s): {"lat": float(lat), "lon": float(lon)} 
+        for s, lat, lon in rows
+        }
 
     current.close()
     conn.close()
@@ -282,34 +285,6 @@ def a_star(start, end, graph, coords):
                 f = new_g + haversine(coords[nxt], coords[end])
                 heapq.heappush(pq, (f, nxt))
     return []
-
-@app.route("/api/path", methods=["POST"])
-def api_path():
-    data = request.json or {}
-    stops = data.get("stops", [])
-    if not stops or len(stops) < 2:
-        return jsonify({"error": "Need at least start and end stop"}), 400
-    
-    start, end = stops[0], stops[-1]
-
-    try: 
-        graph = load_bus_graph()
-        coords = load_bus_coords()
-
-        if start not in graph or end not in coords:
-            return jsonify({"error": "Stops not found in database"}), 400
-        
-        path = a_star(start, end, graph, coords)
-
-        return jsonify({
-            "start": start,
-            "end": end, 
-            "path": path,
-            "count": len(path)
-        })
-    except Exception as e: 
-        return jsonify({"error": f"A* failed: {e}"}), 500
-    
 
 if __name__ == "__main__":
     app.run(debug=True)
